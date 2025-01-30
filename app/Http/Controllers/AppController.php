@@ -62,7 +62,40 @@ class AppController extends Controller
         }
 
         if ($request->action == 'list') {
-            return response()->json(\App\Model\WcProductMetaLookup::search($request));
+            // Fetch all products using WP_Query
+            $args = [
+                'post_type'      => 'product',
+                'posts_per_page' => -1, // Fetch all products
+                'post_status'    => 'publish', // Only published products
+            ];
+
+            $query = new \WP_Query($args);
+            $products = [];
+
+            if ($query->have_posts()) {
+                while ($query->have_posts()) {
+                    $query->the_post();
+
+                    // Get the product object
+                    $product = wc_get_product(get_the_ID());
+                    $image_url = wp_get_attachment_url($product->get_image_id());
+
+                    // Map the product data
+                    $products[] = [
+                        'id'          => $product->get_id(),
+                        'name'        => $product->get_name(),
+                        'description' => $product->get_description(),
+                        'price'       => wc_price($product->get_price()),
+                        'image'   => $image_url,
+                        'link'        => get_permalink($product->get_id()),
+                        'checkout_url' => $this->getCheckoutLink($product->get_id()),
+                    ];
+                }
+                wp_reset_postdata();
+            }
+
+            // Return as JSON response
+            wp_send_json($products);
         }
         
         if ($request->action == 'cart') {
@@ -70,5 +103,22 @@ class AppController extends Controller
         }
 
         return \App\Model\WcProductMetaLookup::select2($request);
+    }
+
+    public function getCheckoutLink($productId, $quantity = 1) {
+        if (!class_exists('WooCommerce')) {
+            return ''; // Ensure WooCommerce is active
+        }
+    
+        // Generate the add-to-cart link
+        $url = wc_get_checkout_url(); // Checkout page URL
+    
+        // Add product ID and quantity as query parameters
+        $url = add_query_arg([
+            'add-to-cart' => $productId,
+            'quantity'    => $quantity,
+        ], $url);
+    
+        return $url;
     }
 }
